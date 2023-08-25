@@ -164,11 +164,13 @@ pub fn query(config: Connection, query: String) {
     let host = config.host;
     let username = config.username;
     let password = config.password;
+    let database = config.database;
     let params = format!(
-        "host={} user={} password={}",
+        "host={} user={} password={} dbname={}",
         host.clone(),
         username.clone(),
-        password.clone()
+        password.clone(),
+        database.clone()
     );
     let client = Client::connect(&params.as_str(), NoTls);
     println!("Connected.");
