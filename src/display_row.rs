@@ -148,8 +148,7 @@ fn get_max_widths(
 }
 
 /// Generic function to convert vector of hashmaps to DisplayRows
-#[allow(dead_code)]
-fn display_rows_from_maps(maps: Vec<HashMap<String, String>>) -> Vec<DisplayRow> {
+pub fn display_rows_from_maps(maps: Vec<HashMap<String, String>>) -> Vec<DisplayRow> {
     let display_rows: Vec<DisplayRow> = maps.iter().map(|map| {
         DisplayRow::new(map.clone())
     }).collect();

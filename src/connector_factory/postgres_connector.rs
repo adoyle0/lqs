@@ -1,161 +1,83 @@
+use std::collections::HashMap;
+
 use futures::executor::block_on;
-use postgres::{NoTls, Row, Column};
-use pad::PadStr;
+use postgres::{NoTls, Row};
+use tokio_postgres::Column;
+use chrono::Utc;
+use uuid::Uuid;
 
 use crate::config::Connection;
+use crate::display_row;
 
-const DIVIDER: &str = "|";
-
-struct DisplayRow {
-    raw_row: Vec<String>,
-    max_width_per_column: Vec<usize>,
-    // max_width: usize
+/// The postgres-crate does not provide a default mapping to fallback to String for all
+/// types: row.get is generic and without a type assignment the FromSql-Trait cannot be inferred.
+/// This function matches over the current column-type and does a manual conversion
+/// TODO Maybe try Serde instead
+fn parse_column_to_string(row: &postgres::Row, column: &Column) -> String {
+    let column_type = column.type_().name();
+    let column_name = column.name();
+    // see https://docs.rs/sqlx/0.4.0-beta.1/sqlx/postgres/types/index.html
+    let value = match column_type {
+        "bool" => {
+            let v: Option<bool> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        "varchar" | "char(n)" | "text" | "name" => {
+            let v: Option<String> = row.get(column_name);
+            v
+        }
+        "int2" | "smallserial" | "smallint" => {
+            let v: Option<i16> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        "int" | "int4" | "serial" => {
+            let v: Option<i32> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        "int8" | "bigserial" | "bigint" => {
+            let v: Option<i64> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        "float4" | "real" => {
+            let v: Option<f32> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        "float8" | "double precision" => {
+            let v: Option<f64> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        "timestamp" | "timestamptz" => {
+            // with-chrono feature is needed for this
+            let v: Option<chrono::DateTime<Utc>> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        "uuid" => {
+            let v: Option<Uuid> = row.get(column_name);
+            v.map(|v| v.to_string())
+        }
+        &_ => Some("CANNOT PARSE".to_string()),
+    };
+    value.unwrap_or("".to_string())
 }
 
-impl DisplayRow {
-    pub fn new(row: &Row) -> DisplayRow {
-        let raw_row = row.columns().into_iter().map(|col| {
-            let val: Option<String> = row.get(col.name());
-            return val.unwrap_or(String::from(""));
-        }).collect();
-
-        let widths: Vec<usize> = row.columns().into_iter().map(|x| {
-            let val: Option<String> = row.get(x.name());
-            if let Some(_i) = val {
-                return _i.as_str().len();
-            } else {
-                return 0;
-            }
-        }).collect();
-        // let width_clone = widths.clone();
-        return DisplayRow { 
-            // row: Some(row),
-            raw_row: raw_row,
-            max_width_per_column: widths,
-            // max_width: width_clone.iter().sum()
-        }
-    }
-
-    pub fn for_columns(columns: &[Column]) -> DisplayRow {
-        let raw_row = columns.into_iter().map(|col| {
-            return col.name().to_string();
-        }).collect();
-
-
-        let widths: Vec<usize> = columns.into_iter().map(|col| {
-            return col.name().len();
-        }).collect();
-
-        // let width_clone = widths.clone();
-
-        return DisplayRow { 
-            raw_row: raw_row,
-            max_width_per_column: widths,
-            // max_width: width_clone.iter().sum() 
-        }
-    }
-}
-
-fn print(rows: Vec<Row>) -> String {
-    if rows.len() <= 0 {
-        return String::from("No results returned.");
-    } else {
-        let divider = String::from(DIVIDER);
-
-        // Create display rows from rows
-        // Create disaply row from columns
-        // Per column find max width of all display rows
-        // Get max width of rows for section dividers
-        // print start
-        // Render rows with padding and divider
-        // Print end
-
-        let mut display_rows: Vec<DisplayRow> = Vec::new();
-        for row in &rows {
-            display_rows.push(DisplayRow::new(row));
-        }
+/// Convert Postgres Rows to Hashmap for DisplayRow conversion
+fn rows_to_map(rows: Vec<Row>) -> Vec<HashMap<String, String>> {
+    // Convert rows to hash map
+    let mut maps: Vec<HashMap<String, String>> = Vec::new();
+    rows.iter().for_each(|row| {
+        let mut map: HashMap<String, String> = HashMap::new();
+        row.columns().into_iter().for_each(|col| {
+            let val = parse_column_to_string(row, col);
+            map.insert(col.name().to_string(), val);
+        });
+        maps.push(map);
+    });
     
-        let column_display_row = DisplayRow::for_columns(rows[0].columns());
 
-        // Get max width per column
-        // Change this to field on struct
-        let column_count = rows[0].columns().len().clone();
-        let mut col_widths: Vec<usize> = vec![0; column_count];
-        for drow in &display_rows {
-            for (i, width) in drow.max_width_per_column.iter().enumerate() {
-                if col_widths[i] < *width {
-                    col_widths[i] = width.clone();
-                }
-            }
-        }
-
-        // Check column names also
-        for (i, col) in column_display_row.raw_row.iter().enumerate() {
-            if col_widths[i] < col.len() {
-                col_widths[i] = col.len().clone();
-            }
-        }
-
-        let mut total_width: usize = col_widths.iter().sum();
-        total_width = total_width + 2 + col_widths.len() - 1; // Include cell borders
-
-        // print first line that is total with
-        let first_line_border = vec!["-"; total_width - 2];
-        let mut first_line_vec = vec!["+"];
-        let first_line_end = vec!["+"];
-        first_line_vec.extend_from_slice(&first_line_border);
-        first_line_vec.extend_from_slice(&first_line_end);
-        let first_line = first_line_vec.into_iter().collect::<String>();
-        // print column line, edges plus for each cell then fill to col_width
-        let mut column_line_vec = Vec::new();
-        for (i, col) in column_display_row.raw_row.iter().enumerate() {
-            column_line_vec.push(divider.clone());
-            let cap = col_widths[i];
-            let cell = col.clone().pad_to_width(cap);
-            column_line_vec.push(cell);
-        }
-        column_line_vec.push(divider.clone());
-
-        let column_line = column_line_vec.into_iter().collect::<String>();
-        // print rows
-        let mut row_lines = String::from("");
-        for display_row in display_rows {
-            let mut row_line_vec = Vec::new();
-            let r = display_row.raw_row;
-            for (y, _) in column_display_row.raw_row.iter().enumerate() {
-                row_line_vec.push(divider.clone());
-                let cap = col_widths[y];
-                let value: String = r.get(y).unwrap().to_string();
-                let cell = value.clone().pad_to_width(cap);
-                row_line_vec.push(cell);
-            }
-            row_line_vec.push(divider.clone());
-            let row_line = row_line_vec.into_iter().collect::<String>();
-            row_lines.push_str(&row_line.to_owned());
-            row_lines.push_str("\n");
-        }
-
-        let mut chars = row_lines.chars();
-        chars.next_back();
-        let final_row_lines = chars.as_str();
-        // print end stats
-        let end = "Done.";
-
-        let result_table = first_line.clone() + "\n" 
-                                    + &column_line.to_owned() + "\n" 
-                                    + &first_line.clone() + "\n" 
-                                    + final_row_lines + "\n"
-                                    + &first_line.clone() + "\n" 
-                                    + end;
-        return result_table;
-    }
+    return maps;
 }
 
-fn print_results(rows: Vec<Row>) {
-    let results = print(rows);
-    println!("{results}");
-}
-
+/// Async query Postgres with given connection configuration and query
 async fn query_async(config: Connection, query: String) {
     let host = config.host;
     let username = config.username;
@@ -171,7 +93,6 @@ async fn query_async(config: Connection, query: String) {
     let connection_tuple = tokio_postgres::connect(&params.as_str(), NoTls).await;
     match connection_tuple {
         Ok((client, connection)) => {
-            println!("Connected.");
 
             tokio::spawn(async move {
                 if let Err(e) = connection.await {
@@ -182,7 +103,9 @@ async fn query_async(config: Connection, query: String) {
             let result = client.query(&query, &[]).await;
             match result {
                 Ok(rows) => {
-                    print_results(rows);
+                    let maps = rows_to_map(rows);
+                    let display_rows = display_row::display_rows_from_maps(maps);
+                    display_row::render(display_rows)
                 },
                 Err(e) => println!("Did not return results from query because of an error.\n{:?}", e)
             }
@@ -191,6 +114,7 @@ async fn query_async(config: Connection, query: String) {
     }
 }
 
+/// Entry point for querying using Postgres connector
 pub fn query(config: Connection, query: String) {
     block_on(query_async(config, query))
 }
