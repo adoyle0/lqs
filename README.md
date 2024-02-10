@@ -39,6 +39,11 @@ Or to just run 1 query and exit
 lqs --connection=example --query="from table select *"
 ```
 
+## Dev
+```
+cargo run -- -c example -q "select * from table"
+```
+
 ## Test
 ```
 cargo test

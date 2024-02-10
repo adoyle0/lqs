@@ -78,7 +78,7 @@ pub fn parse(q: String) -> String {
                 let sub_parts = parts_vec.clone()[i..].to_vec();
                 let mut lqs_subquery = String::from(" ");
                 for sub_part in sub_parts {
-                    let mut check_part = sub_part.clone();
+                    let mut check_part = sub_part;
                     if check_part.starts_with("(") {
                         let mut chars = check_part.chars();
                         chars.next();
@@ -139,11 +139,11 @@ pub fn parse(q: String) -> String {
                 }
 
                 if state.current_clause == Clause::Select {
-                    select_clause = select_clause + " " + part.clone();
+                    select_clause = select_clause + " " + part;
                 } else if state.current_clause == Clause::From {
-                    from_clause = from_clause + " " + part.clone();
+                    from_clause = from_clause + " " + part;
                 } else if state.current_clause == Clause::Where {
-                    where_clause = where_clause + " " + part.clone();
+                    where_clause = where_clause + " " + part;
                 }
             }
         }

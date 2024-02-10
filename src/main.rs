@@ -1,10 +1,11 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 use clap::{Parser, Subcommand};
 use config::Connection;
 
 mod lqs;
 mod config;
 mod connector_factory;
+mod display_row;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -32,6 +33,7 @@ fn start_continuous_querying(connection_name: String) {
     let mut run = true;
 
     let connection = Connection::from_config(connection_name);
+    println!("Connection configured for {}...", &connection.system);
 
     while run {
         let mut line = String::new();
@@ -49,6 +51,7 @@ fn start_continuous_querying(connection_name: String) {
 /// Run database query
 fn run_query(connection_name: String, query: String) {
     let connection = Connection::from_config(connection_name);
+    println!("Connection configured for {}...", &connection.system);
     connector_factory::submit(connection, query);
 }
 
@@ -74,7 +77,8 @@ fn validate_connection(connection: Option<String>) -> Result<String, &'static st
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     match &cli.command {

@@ -13,7 +13,8 @@ pub struct Connection {
     pub port: String,
     pub username: String,
     pub password: String,
-    pub database: String
+    pub database: String,
+    pub namespace: String
 }
 
 impl Connection {
@@ -28,6 +29,7 @@ impl Connection {
       username: connection.get("username").unwrap().clone().unwrap(),
       password: connection.get("password").unwrap().clone().unwrap(),
       database: connection.get("database").unwrap().clone().unwrap(),
+      namespace: connection.get("namespace").unwrap().clone().unwrap(),
     }
   }
 }

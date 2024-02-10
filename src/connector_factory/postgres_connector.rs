@@ -1,4 +1,5 @@
-use postgres::{Client, NoTls, Row, Column};
+use futures::executor::block_on;
+use postgres::{NoTls, Row, Column};
 use pad::PadStr;
 
 use crate::config::Connection;
@@ -16,11 +17,6 @@ impl DisplayRow {
         let raw_row = row.columns().into_iter().map(|col| {
             let val: Option<String> = row.get(col.name());
             return val.unwrap_or(String::from(""));
-            // if let Some(_i) = val {
-            //     return _i.clone();
-            // } else {
-            //     return String::from("");
-            // }
         }).collect();
 
         let widths: Vec<usize> = row.columns().into_iter().map(|x| {
@@ -160,7 +156,7 @@ fn print_results(rows: Vec<Row>) {
     println!("{results}");
 }
 
-pub fn query(config: Connection, query: String) {
+async fn query_async(config: Connection, query: String) {
     let host = config.host;
     let username = config.username;
     let password = config.password;
@@ -172,14 +168,29 @@ pub fn query(config: Connection, query: String) {
         password.clone(),
         database.clone()
     );
-    let client = Client::connect(&params.as_str(), NoTls);
-    println!("Connected.");
+    let connection_tuple = tokio_postgres::connect(&params.as_str(), NoTls).await;
+    match connection_tuple {
+        Ok((client, connection)) => {
+            println!("Connected.");
 
-    let result = client.unwrap().query(&query, &[]);
-    match result {
-        Ok(rows) => {
-            print_results(rows);
+            tokio::spawn(async move {
+                if let Err(e) = connection.await {
+                    eprintln!("connection error: {}", e);
+                }
+            });
+
+            let result = client.query(&query, &[]).await;
+            match result {
+                Ok(rows) => {
+                    print_results(rows);
+                },
+                Err(e) => println!("Did not return results from query because of an error.\n{:?}", e)
+            }
         },
-        Err(e) => println!("Did not return results from query because of an error.\n{:?}", e)
+        Err(error) => eprintln!("connection error: {}", error)
     }
+}
+
+pub fn query(config: Connection, query: String) {
+    block_on(query_async(config, query))
 }
