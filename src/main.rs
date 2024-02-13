@@ -83,7 +83,7 @@ async fn main() {
 
     match &cli.command {
         Some(Commands::Init) => {
-            config::create_config();
+            let _ = config::create_config();
         }
         None => {
             match validate_connection(cli.connection) {
